@@ -1,0 +1,496 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Optimizador de Consistencia — Solver</title>
+<style>
+  :root{
+    --bg: #12141c; --bg-2: #181b26; --panel: #1c2030; --line: #3a3f57;
+    --gold: #d4a72c; --gold-dim: #8a7328; --teal: #4fb3a9; --red: #c25a4a;
+    --ink: #e9e6dc; --ink-dim: #a7a7b5; --radius: 3px;
+  }
+  @media (prefers-color-scheme: light){
+    :root:not([data-theme="dark"]){
+      --bg:#f3f1ea; --bg-2:#eae6d9; --panel:#fffdf7; --line:#d8d0bb;
+      --ink:#1d1c17; --ink-dim:#5c584a; --gold-dim:#b6952a;
+    }
+  }
+  *{box-sizing:border-box;}
+  html,body{height:100%;}
+  html{scroll-padding-top:env(safe-area-inset-top,0px);}
+  body{
+    margin:0; background:var(--bg); color:var(--ink);
+    font-family:'Manrope',-apple-system,'Segoe UI',sans-serif;
+    padding-top:env(safe-area-inset-top,0px); padding-bottom:env(safe-area-inset-bottom,0px);
+    line-height:1.5;
+  }
+  .wrap{ max-width:940px; margin:0 auto; padding:44px 20px 80px; }
+  h1{ font-family:'Spectral',Georgia,serif; font-weight:600; font-size:clamp(26px,4.6vw,36px); line-height:1.15; margin:0 0 6px; color:var(--gold); }
+  .sub{ color:var(--ink-dim); font-size:14.5px; max-width:70ch; margin:0 0 36px; }
+  .panel{ background:var(--panel); border:1px solid var(--line); border-radius:var(--radius); padding:22px 22px 24px; margin-bottom:20px; position:relative; }
+  .panel::before{ content:""; position:absolute; top:0; left:0; width:14px; height:14px; border-top:2px solid var(--gold-dim); border-left:2px solid var(--gold-dim); }
+  .panel::after{ content:""; position:absolute; bottom:0; right:0; width:14px; height:14px; border-bottom:2px solid var(--gold-dim); border-right:2px solid var(--gold-dim); }
+  .panel h2{ font-family:'Spectral',Georgia,serif; font-weight:600; font-size:18px; margin:0 0 6px; }
+  .panel .desc{ font-size:13px; color:var(--ink-dim); margin:0 0 16px; }
+  .grid{ display:grid; grid-template-columns:repeat(auto-fit,minmax(140px,1fr)); gap:14px 16px; }
+  .field label{ display:block; font-size:12px; color:var(--ink-dim); margin-bottom:6px; }
+  .field input[type=number], .field input[type=text]{
+    width:100%; background:var(--bg-2); border:1px solid var(--line); color:var(--ink);
+    font-size:15px; font-variant-numeric:tabular-nums; padding:8px 9px; border-radius:var(--radius);
+  }
+  .field input:focus{ outline:1px solid var(--gold); outline-offset:1px; }
+  .toggle-row{ display:flex; gap:10px; margin-top:4px; }
+  .toggle-row button{
+    flex:1; background:var(--bg-2); border:1px solid var(--line); color:var(--ink-dim);
+    padding:8px 10px; border-radius:var(--radius); font-size:13.5px; cursor:pointer;
+  }
+  .toggle-row button.active{ border-color:var(--gold); color:var(--gold); background:rgba(212,167,44,0.08); }
+  .sb-row{
+    display:grid; grid-template-columns:1.3fr 1fr 1fr auto; gap:10px; align-items:end;
+    padding:12px 0; border-bottom:1px solid rgba(255,255,255,0.06);
+  }
+  .sb-row:last-child{ border-bottom:none; }
+  .sb-row .field label{ font-size:11.5px; }
+  .sb-remove{
+    background:transparent; border:1px solid var(--line); color:var(--red);
+    width:34px; height:34px; border-radius:var(--radius); cursor:pointer; font-size:16px;
+    align-self:end; margin-bottom:1px;
+  }
+  .add-btn{ margin-top:14px; background:var(--bg-2); border:1px dashed var(--gold-dim); color:var(--gold); padding:9px 14px; border-radius:var(--radius); cursor:pointer; font-size:13.5px; }
+  .sum-note{ font-size:12.5px; color:var(--ink-dim); margin-top:14px; }
+  .sum-note.warn{ color:var(--red); }
+  .results{ display:grid; grid-template-columns:repeat(auto-fit,minmax(190px,1fr)); gap:12px; margin-bottom:6px;}
+  .metric{ background:var(--bg-2); border:1px solid var(--line); border-radius:var(--radius); padding:14px 15px 12px; }
+  .metric .label{ font-size:12px; color:var(--ink-dim); margin-bottom:7px; }
+  .metric .value{ font-family:'Spectral',Georgia,serif; font-size:25px; font-variant-numeric:tabular-nums; }
+  .metric.good .value{ color:var(--teal); }
+  .metric.bad .value{ color:var(--red); }
+  .metric .foot{ font-size:11.5px; color:var(--ink-dim); margin-top:5px; }
+  .sb-result{
+    background:var(--bg-2); border:1px solid var(--line); border-radius:var(--radius);
+    padding:14px 15px; margin-top:10px; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px;
+  }
+  .sb-result .name{ font-weight:600; }
+  .sb-result .stats{ display:flex; gap:18px; font-variant-numeric:tabular-nums; }
+  .sb-result .stats div{ text-align:right; }
+  .sb-result .stats .l{ font-size:11px; color:var(--ink-dim); }
+  .sb-result .stats .v{ font-size:17px; font-family:'Spectral',Georgia,serif; }
+  table{ width:100%; border-collapse:collapse; font-size:13.5px; font-variant-numeric:tabular-nums; }
+  thead th{ text-align:left; font-weight:600; color:var(--ink-dim); font-size:12px; padding:6px 8px; border-bottom:1px solid var(--line); }
+  tbody td{ padding:6px 8px; border-bottom:1px solid rgba(255,255,255,0.05); }
+  tbody tr.best{ background:rgba(212,167,44,0.12); }
+  tbody tr.best td:first-child{ color:var(--gold); font-weight:700; }
+  .scrollx{ overflow-x:auto; max-height:400px; overflow-y:auto; }
+  .note{ font-size:13px; color:var(--ink-dim); margin-top:14px; line-height:1.6; }
+  .note code{ background:var(--bg-2); padding:1px 5px; border-radius:2px; font-size:12px; }
+  .winner-banner{
+    border:1px solid var(--gold-dim); background:rgba(212,167,44,0.08); border-radius:var(--radius);
+    padding:18px 20px; margin-bottom:16px;
+  }
+  .winner-banner .decksize{ font-family:'Spectral',Georgia,serif; font-size:32px; color:var(--gold); margin-bottom:4px; }
+  .winner-banner .decksize-lbl{ font-size:12px; color:var(--ink-dim); margin-bottom:14px; }
+  .winner-split{ display:flex; gap:24px; flex-wrap:wrap; }
+  .winner-split .item .lbl{ font-size:12px; color:var(--ink-dim); }
+  .winner-split .item .big{ font-family:'Spectral',Georgia,serif; font-size:22px; }
+  .weights{ display:flex; gap:14px; margin-top:6px; flex-wrap:wrap; }
+  .weights .field{ max-width:170px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Solver de mazo — tamaño, starters, handtraps &amp; breakers</h1>
+  <p class="sub">Dime tus bricks, tus semi-bricks (con sus parejas) y la mano que más quieres ver. El solver prueba tamaños de mazo entre 40 y 60 cartas y, para cada uno, la mejor mezcla de starters/handtraps/breakers, y te sugiere la combinación que mejor equilibra las tres cosas: ver tu mano objetivo seguido, ver bricks lo menos posible, y ver tus semi-bricks acompañados de su pareja.</p>
+
+  <div class="panel">
+    <h2>Turno</h2>
+    <div class="toggle-row" style="max-width:320px">
+      <button id="btnFirst" class="active">1° (5 cartas)</button>
+      <button id="btnSecond">2° (6 cartas)</button>
+    </div>
+  </div>
+
+  <div class="panel">
+    <h2>Bricks</h2>
+    <p class="desc">Cartas muertas si las robas, pero que necesitas correr igual (tech, requisitos de otras cartas, etc.)</p>
+    <div class="grid">
+      <div class="field">
+        <label for="bricks">Copias totales</label>
+        <input type="number" id="bricks" value="0" min="0">
+      </div>
+    </div>
+  </div>
+
+  <div class="panel">
+    <h2>Semi-bricks</h2>
+    <p class="desc">Cada semi-brick solo sirve si también robas alguna de sus parejas. Agrega uno por cada semi-brick distinto — sus parejas pueden ser exclusivas o compartidas con otro semi-brick. Las copias de las parejas <strong>no</strong> se suman al tamaño del mazo: se asume que esas cartas ya están contadas dentro de tus starters, handtraps, breakers u otro semi-brick — aquí solo nos interesa cuántas hay en total para calcular la probabilidad de que acompañen al semi-brick.</p>
+    <div id="semibricksList"></div>
+    <button class="add-btn" id="addSemiBrick">+ Agregar semi-brick</button>
+  </div>
+
+  <div class="panel">
+    <h2>Mano que más quieres ver</h2>
+    <p class="desc">El solver maximiza la probabilidad de robar <em>al menos</em> esta combinación en tu mano inicial.</p>
+    <div class="grid">
+      <div class="field">
+        <label for="targetS">Starters mínimos</label>
+        <input type="number" id="targetS" value="1" min="0">
+      </div>
+      <div class="field">
+        <label for="targetH">Handtraps mínimos</label>
+        <input type="number" id="targetH" value="1" min="0">
+      </div>
+      <div class="field">
+        <label for="targetB">Breakers mínimos</label>
+        <input type="number" id="targetB" value="0" min="0">
+      </div>
+    </div>
+  </div>
+
+  <div class="panel">
+    <h2>Starters por tier</h2>
+    <p class="desc">Tier 1 son tus starters más fuertes — verlos en mano es lo mejor. Tier 3 son "peor es nada". Declara cuántas copias distintas de cada nivel realmente tienes (esto reemplaza el tope único de starters); el solver decide cuántas de cada una jugar, pero siempre llena primero con el tier más fuerte que tenga espacio, porque a igualdad de starters totales, más Tier 1 nunca empeora tu mano objetivo y siempre mejora su poder.</p>
+    <div class="grid">
+      <div class="field">
+        <label for="t1copies">Tier 1 — copias disponibles</label>
+        <input type="number" id="t1copies" value="3" min="0">
+      </div>
+      <div class="field">
+        <label for="t1power">Tier 1 — puntos de poder</label>
+        <input type="number" id="t1power" value="3" min="0" step="0.5">
+      </div>
+      <div class="field">
+        <label for="t2copies">Tier 2 — copias disponibles</label>
+        <input type="number" id="t2copies" value="4" min="0">
+      </div>
+      <div class="field">
+        <label for="t2power">Tier 2 — puntos de poder</label>
+        <input type="number" id="t2power" value="2" min="0" step="0.5">
+      </div>
+      <div class="field">
+        <label for="t3copies">Tier 3 — copias disponibles</label>
+        <input type="number" id="t3copies" value="4" min="0">
+      </div>
+      <div class="field">
+        <label for="t3power">Tier 3 — puntos de poder</label>
+        <input type="number" id="t3power" value="1" min="0" step="0.5">
+      </div>
+    </div>
+  </div>
+
+  <div class="panel">
+    <h2>Límites por categoría</h2>
+    <p class="desc">Sin límite, el solver siempre preferirá el mazo más grande posible (60), porque más copias de handtraps/breakers nunca perjudican la mano objetivo. Pon aquí cuántas copias distintas de cada tipo realmente tienes o quieres jugar como <strong>techo</strong> — el solver puede seguir sugiriendo menos que ese número si repartir esos slots en otra categoría da mejor probabilidad conjunta. Deja en blanco si no quieres limitar esa categoría.</p>
+    <div class="grid">
+      <div class="field">
+        <label for="maxH">Handtraps máximos</label>
+        <input type="number" id="maxH" placeholder="sin límite" min="0">
+      </div>
+      <div class="field">
+        <label for="maxZ">Breakers máximos</label>
+        <input type="number" id="maxZ" placeholder="sin límite" min="0">
+      </div>
+    </div>
+  </div>
+
+  <div class="panel">
+    <h2>Cuánto pesa cada objetivo</h2>
+    <p class="desc">Los objetivos compiten entre sí: un mazo más grande diluye tus bricks (bien) pero también diluye tus semi-bricks con su pareja (mal) y puede diluir tu mano objetivo. Meter más Tier 1 sube el poder de la mano pero no es gratis si eso te deja con menos starters totales. Ajusta si alguno te importa más — por defecto pesan igual.</p>
+    <div class="weights">
+      <div class="field"><label for="wTarget">Peso: mano objetivo</label><input type="number" id="wTarget" value="1" min="0" step="0.5"></div>
+      <div class="field"><label for="wBrick">Peso: evitar bricks</label><input type="number" id="wBrick" value="1" min="0" step="0.5"></div>
+      <div class="field"><label for="wSemi">Peso: semi-bricks acompañados</label><input type="number" id="wSemi" value="1" min="0" step="0.5"></div>
+      <div class="field"><label for="wPower">Peso: poder de la mano</label><input type="number" id="wPower" value="1" min="0" step="0.5"></div>
+    </div>
+  </div>
+
+
+  <div class="panel">
+    <h2>Sugerencia del solver</h2>
+    <div id="winnerBanner"></div>
+    <div class="scrollx">
+      <table id="solverTable"></table>
+    </div>
+    <div class="note">El mazo nunca lleva relleno: el tamaño de mazo que ves arriba es siempre exactamente <code>starters + handtraps + breakers + bricks + semi-bricks</code> — las parejas de los semi-bricks <strong>no</strong> se suman aparte, porque se asume que esas cartas ya viven dentro de tus otras categorías (starters, handtraps, breakers o incluso otro semi-brick), no que ocupan slots extra. El solver prueba todas las combinaciones de starters, handtraps y breakers (respetando los topes que pusiste, si los pusiste) cuya suma más tus bricks y semi-bricks caiga entre 40 y 60 cartas, calcula la probabilidad de tu mano objetivo en cada una, y combina esa probabilidad con P(sin brick) y el promedio de "semi-brick con pareja", ponderados según lo de arriba, en un puntaje único. La combinación con mejor puntaje es la fila destacada — y puede recomendarte menos que el máximo que fijaste en cualquier categoría si eso rinde mejor en conjunto.</div>
+  </div>
+
+  <div class="panel">
+    <h2>Detalle de bricks y semi-bricks con el mazo sugerido</h2>
+    <div class="results" id="fixedResults"></div>
+    <div id="semibrickResults"></div>
+  </div>
+
+</div>
+
+<script>
+function C(n,k){
+  if(k<0||k>n||n<0) return 0;
+  k=Math.min(k,n-k);
+  let r=1;
+  for(let i=0;i<k;i++){ r = r*(n-i)/(i+1); }
+  return r;
+}
+function pAtLeastOne(N,K,h){
+  const total=C(N,h);
+  if(total===0) return 0;
+  return 1 - C(N-K,h)/total;
+}
+function pSemiBrickAlone(N,SB,P,h){
+  const total=C(N,h);
+  if(total===0) return 0;
+  let sum=0;
+  const rest=N-SB-P;
+  for(let x=1;x<=Math.min(SB,h);x++){
+    sum += C(SB,x)*C(rest,h-x);
+  }
+  return sum/total;
+}
+function pMinComposition(N,S,H,Z,Xmin,Ymin,Zmin,h){
+  const total=C(N,h);
+  if(total===0) return 0;
+  const rest = N-S-H-Z;
+  if(rest<0) return 0;
+  let sum=0;
+  for(let x=Xmin;x<=Math.min(S,h);x++){
+    for(let y=Ymin;y<=Math.min(H,h-x);y++){
+      for(let z=Zmin;z<=Math.min(Z,h-x-y);z++){
+        const r = h-x-y-z;
+        if(r<0||r>rest) continue;
+        sum += C(S,x)*C(H,y)*C(Z,z)*C(rest,r);
+      }
+    }
+  }
+  return sum/total;
+}
+function pct(x){ return (x*100).toFixed(1)+"%"; }
+
+let handSize = 5;
+const btnFirst = document.getElementById('btnFirst');
+const btnSecond = document.getElementById('btnSecond');
+btnFirst.addEventListener('click', ()=>{handSize=5; btnFirst.classList.add('active'); btnSecond.classList.remove('active'); update();});
+btnSecond.addEventListener('click', ()=>{handSize=6; btnSecond.classList.add('active'); btnFirst.classList.remove('active'); update();});
+
+let sbCounter = 0;
+const sbList = document.getElementById('semibricksList');
+function addSemiBrickRow(name, copies, partnerCopies){
+  sbCounter++;
+  const id = sbCounter;
+  const row = document.createElement('div');
+  row.className = 'sb-row';
+  row.dataset.id = id;
+  row.innerHTML = `
+    <div class="field">
+      <label>Nombre</label>
+      <input type="text" class="sb-name" value="${name||('Semi-brick '+String.fromCharCode(64+id))}">
+    </div>
+    <div class="field">
+      <label>Copias del semi-brick</label>
+      <input type="number" class="sb-copies" value="${copies!==undefined?copies:2}" min="0">
+    </div>
+    <div class="field">
+      <label>Copias totales de sus parejas</label>
+      <input type="number" class="sb-partners" value="${partnerCopies!==undefined?partnerCopies:3}" min="0">
+    </div>
+    <button class="sb-remove" title="Quitar">×</button>
+  `;
+  row.querySelector('.sb-remove').addEventListener('click', ()=>{ row.remove(); update(); });
+  row.querySelectorAll('input').forEach(inp=> inp.addEventListener('input', update));
+  sbList.appendChild(row);
+}
+document.getElementById('addSemiBrick').addEventListener('click', ()=>{ addSemiBrickRow(); update(); });
+addSemiBrickRow('Semi-brick A', 1, 3);
+addSemiBrickRow('Semi-brick B', 2, 2);
+
+const els = {
+  bricks: document.getElementById('bricks'),
+  targetS: document.getElementById('targetS'),
+  targetH: document.getElementById('targetH'),
+  targetB: document.getElementById('targetB'),
+  t1copies: document.getElementById('t1copies'),
+  t1power: document.getElementById('t1power'),
+  t2copies: document.getElementById('t2copies'),
+  t2power: document.getElementById('t2power'),
+  t3copies: document.getElementById('t3copies'),
+  t3power: document.getElementById('t3power'),
+  maxH: document.getElementById('maxH'),
+  maxZ: document.getElementById('maxZ'),
+  wTarget: document.getElementById('wTarget'),
+  wBrick: document.getElementById('wBrick'),
+  wSemi: document.getElementById('wSemi'),
+  wPower: document.getElementById('wPower'),
+};
+function capVal(el){
+  const v = el.value;
+  if(v===''||v===null) return Infinity;
+  const n = parseInt(v);
+  return isNaN(n) ? Infinity : Math.max(0,n);
+}
+Object.values(els).forEach(el=> el.addEventListener('input', update));
+
+function getSemiBricks(){
+  return Array.from(sbList.querySelectorAll('.sb-row')).map(row=>({
+    name: row.querySelector('.sb-name').value || 'Semi-brick',
+    copies: parseInt(row.querySelector('.sb-copies').value)||0,
+    partners: parseInt(row.querySelector('.sb-partners').value)||0,
+  }));
+}
+
+function metric(container, label, value, cls, foot){
+  const div = document.createElement('div');
+  div.className = 'metric'+(cls?(' '+cls):'');
+  div.innerHTML = `<div class="label">${label}</div><div class="value">${value}</div>${foot?`<div class="foot">${foot}</div>`:''}`;
+  container.appendChild(div);
+}
+
+// Searches every (S,H,Z) combination directly — N is never chosen independently,
+// it is always exactly fixed + S + H + Z, so the deck size the tool reports can
+// never be more than the sum of every category you declared.
+// For a given total S, the tier breakdown that maximizes power WITHOUT ever costing
+// anything on the target-hand probability is greedy: fill Tier 1 first (up to its cap),
+// then Tier 2, then Tier 3 — because the composition formula only cares about total
+// starters, never which tier, so there's no trade-off to search over.
+function tierFill(S, cap1, cap2, cap3){
+  const S1 = Math.min(S, cap1);
+  const S2 = Math.min(S - S1, cap2);
+  const S3 = Math.min(S - S1 - S2, cap3);
+  return [S1,S2,S3];
+}
+function searchDeck(fixed, Xmin, Ymin, Zmin, h, cap1, cap2, cap3, p1, p2, p3, maxH, maxZ, B, sbs, wT, wB, wS, wP, wSum){
+  const maxS = cap1 + cap2 + cap3;
+  const maxFlex = 60 - fixed;   // hard legal ceiling (60-card deck)
+  const minFlex = Math.max(0, 40 - fixed); // hard legal floor (40-card deck)
+  const results = [];
+  if(maxFlex < 0) return results; // fixed cards alone already exceed 60
+  const sTop = Math.min(maxS, maxFlex);
+  for(let S=0; S<=sTop; S++){
+    const [S1,S2,S3] = tierFill(S, cap1, cap2, cap3);
+    const hTop = Math.min(maxH, maxFlex - S);
+    for(let H=0; H<=hTop; H++){
+      const zTop = Math.min(maxZ, maxFlex - S - H);
+      for(let Z=0; Z<=zTop; Z++){
+        const total = S + H + Z;
+        if(total < minFlex) continue; // would need un-declared filler to reach 40 — not allowed
+        const N = fixed + total;
+        const pTarget = pMinComposition(N,S,H,Z,Xmin,Ymin,Zmin,h);
+        const pBrick = pAtLeastOne(N,B,h);
+        const pDeadHand = 1 - pAtLeastOne(N,S,h); // hand with zero starters
+        let semiAvg = 1;
+        if(sbs.length){
+          let sum=0;
+          sbs.forEach(sb=>{
+            const pAny = pAtLeastOne(N, sb.copies, h);
+            const pAlone = pSemiBrickAlone(N, sb.copies, sb.partners, h);
+            sum += Math.max(0, pAny - pAlone);
+          });
+          semiAvg = sum/sbs.length;
+        }
+        // expected hand power: linearity of expectation — exact regardless of correlation
+        const expectedPower = h*(p1*S1 + p2*S2 + p3*S3)/N;
+        const powerScore = p1>0 ? Math.min(1, expectedPower/(h*p1)) : 0;
+        const score = (wT*pTarget + wB*(1-pBrick) + wS*semiAvg + wP*powerScore)/wSum;
+        results.push({N,S,S1,S2,S3,H,Z,pTarget,pBrick,pDeadHand,semiAvg,expectedPower,powerScore,score});
+      }
+    }
+  }
+  return results;
+}
+
+function update(){
+  const B = parseInt(els.bricks.value)||0;
+  const Xmin = parseInt(els.targetS.value)||0;
+  const Ymin = parseInt(els.targetH.value)||0;
+  const Zmin = parseInt(els.targetB.value)||0;
+  const wT = Math.max(0, parseFloat(els.wTarget.value)||0);
+  const wB = Math.max(0, parseFloat(els.wBrick.value)||0);
+  const wS = Math.max(0, parseFloat(els.wSemi.value)||0);
+  const wP = Math.max(0, parseFloat(els.wPower.value)||0);
+  const wSum = (wT+wB+wS+wP) || 1;
+  const cap1 = parseInt(els.t1copies.value)||0;
+  const cap2 = parseInt(els.t2copies.value)||0;
+  const cap3 = parseInt(els.t3copies.value)||0;
+  const p1 = Math.max(0, parseFloat(els.t1power.value)||0);
+  const p2 = Math.max(0, parseFloat(els.t2power.value)||0);
+  const p3 = Math.max(0, parseFloat(els.t3power.value)||0);
+  const maxH = capVal(els.maxH);
+  const maxZ = capVal(els.maxZ);
+  const h = handSize;
+  const sbs = getSemiBricks();
+  const sbCopiesTotal = sbs.reduce((a,s)=>a+s.copies,0); // partners are NOT added to deck size — they're assumed to already sit inside starters/handtraps/breakers/bricks
+  const fixed = B + sbCopiesTotal;
+
+  const results = searchDeck(fixed, Xmin, Ymin, Zmin, h, cap1, cap2, cap3, p1, p2, p3, maxH, maxZ, B, sbs, wT, wB, wS, wP, wSum);
+
+  const winnerBanner = document.getElementById('winnerBanner');
+  const table = document.getElementById('solverTable');
+
+  if(!results.length){
+    winnerBanner.innerHTML = `<div class="sum-note warn">Tus bricks + semi-bricks (con parejas) ya suman más de 60 cartas — no hay tamaño de mazo legal que quepa. Reduce copias.</div>`;
+    table.innerHTML = '';
+    document.getElementById('fixedResults').innerHTML = '';
+    document.getElementById('semibrickResults').innerHTML = '';
+    return;
+  }
+
+  results.sort((a,b)=> b.score - a.score);
+  const best = results[0];
+
+  winnerBanner.innerHTML = `
+    <div class="winner-banner">
+      <div class="decksize">${best.N} cartas</div>
+      <div class="decksize-lbl">Tamaño de mazo sugerido</div>
+      <div class="winner-split">
+        <div class="item"><div class="lbl">Starters (T1/T2/T3)</div><div class="big">${best.S1}/${best.S2}/${best.S3}</div></div>
+        <div class="item"><div class="lbl">Handtraps</div><div class="big">${best.H}</div></div>
+        <div class="item"><div class="lbl">Breakers</div><div class="big">${best.Z}</div></div>
+        <div class="item"><div class="lbl">Poder esperado de mano</div><div class="big" style="color:var(--gold)">${best.expectedPower.toFixed(2)}</div></div>
+        <div class="item"><div class="lbl">P(mano objetivo)</div><div class="big" style="color:var(--teal)">${pct(best.pTarget)}</div></div>
+        <div class="item"><div class="lbl">P(≥1 brick)</div><div class="big" style="color:var(--red)">${pct(best.pBrick)}</div></div>
+        <div class="item"><div class="lbl">P(mano muerta, 0 starters)</div><div class="big" style="color:var(--red)">${pct(best.pDeadHand)}</div></div>
+        <div class="item"><div class="lbl">Semi-bricks acompañados (prom.)</div><div class="big">${pct(best.semiAvg)}</div></div>
+      </div>
+    </div>`;
+
+  const byNMap = new Map();
+  results.forEach(r=>{
+    const cur = byNMap.get(r.N);
+    if(!cur || r.score > cur.score) byNMap.set(r.N, r);
+  });
+  const byN = [...byNMap.values()].sort((a,b)=>a.N-b.N);
+  let thead = '<thead><tr><th>N</th><th>Starters T1/T2/T3</th><th>Handtraps</th><th>Breakers</th><th>Poder</th><th>P(mano objetivo)</th><th>P(≥1 brick)</th><th>P(mano muerta)</th><th>Semi-bricks c/pareja</th><th>Puntaje</th></tr></thead>';
+  let tbody = '<tbody>';
+  byN.forEach(r=>{
+    const isBest = r===best;
+    tbody += `<tr${isBest?' class="best"':''}><td>${r.N}</td><td>${r.S1}/${r.S2}/${r.S3}</td><td>${r.H}</td><td>${r.Z}</td><td>${r.expectedPower.toFixed(2)}</td><td>${pct(r.pTarget)}</td><td>${pct(r.pBrick)}</td><td>${pct(r.pDeadHand)}</td><td>${pct(r.semiAvg)}</td><td>${(r.score*100).toFixed(1)}</td></tr>`;
+  });
+  tbody += '</tbody>';
+  table.innerHTML = thead+tbody;
+
+  // detail panel for winning N
+  const fixedResults = document.getElementById('fixedResults');
+  fixedResults.innerHTML = '';
+  metric(fixedResults, 'P(≥1 brick en mano)', pct(best.pBrick), best.pBrick<0.1?'good':(best.pBrick>0.25?'bad':''), `Con ${B} copias en ${best.N} cartas`);
+
+  const sbResultsDiv = document.getElementById('semibrickResults');
+  sbResultsDiv.innerHTML = '';
+  sbs.forEach(sb=>{
+    const pAny = pAtLeastOne(best.N, sb.copies, h);
+    const pAlone = pSemiBrickAlone(best.N, sb.copies, sb.partners, h);
+    const pWithPartner = Math.max(0, pAny - pAlone);
+    const div = document.createElement('div');
+    div.className = 'sb-result';
+    div.innerHTML = `
+      <div class="name">${sb.name}</div>
+      <div class="stats">
+        <div><div class="l">Solo (muerto)</div><div class="v" style="color:${pAlone>0.12?'var(--red)':'var(--ink)'}">${pct(pAlone)}</div></div>
+        <div><div class="l">Con pareja</div><div class="v" style="color:var(--teal)">${pct(pWithPartner)}</div></div>
+        <div><div class="l">Nunca lo robas</div><div class="v">${pct(1-pAny)}</div></div>
+      </div>
+    `;
+    sbResultsDiv.appendChild(div);
+  });
+}
+
+update();
+</script>
+</body>
+</html>
